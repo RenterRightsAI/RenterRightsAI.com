@@ -1,0 +1,25 @@
+{
+  "name": "renter-rights-ai",
+  "version": "1.0.0",
+  "description": "Renter Rights AI - Know Your Rights",
+  "main": "renter-rights-assistant_07042026.html",
+  "scripts": {
+    "serve": "python3 -m http.server 8000",
+    "deploy": "vercel deploy"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RenterRightsAI/RenterRightsAI.com.git"
+  },
+  "keywords": [
+    "renter-rights",
+    "tenant-rights",
+    "legal-information"
+  ],
+  "author": "Renter Rights AI",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/RenterRightsAI/RenterRightsAI.com/issues"
+  },
+  "homepage": "https://github.com/RenterRightsAI/RenterRightsAI.com#readme"
+}
