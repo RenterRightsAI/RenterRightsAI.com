@@ -89,12 +89,6 @@ export function HomeView() {
             <svg viewBox="0 0 24 24">
               <polyline points="20 6 9 17 4 12" />
             </svg>
-            No account required
-          </div>
-          <div className="hero-trust-item">
-            <svg viewBox="0 0 24 24">
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
             Private &amp; confidential
           </div>
         </div>
