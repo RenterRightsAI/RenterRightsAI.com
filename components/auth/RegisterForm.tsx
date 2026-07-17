@@ -2,12 +2,22 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { AuthBrandHeader, GoogleIcon } from "@/components/auth/AuthChrome";
 
 export function RegisterForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const nextPath = searchParams.get("next");
+  const safeNext =
+    nextPath &&
+    nextPath.startsWith("/") &&
+    !nextPath.startsWith("//") &&
+    nextPath !== "/"
+      ? nextPath
+      : "/home";
+
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -25,7 +35,7 @@ export function RegisterForm() {
       const { error: err } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(safeNext)}`,
         },
       });
       if (err) setError(err.message);
@@ -58,7 +68,7 @@ export function RegisterForm() {
         password,
         options: {
           data: { full_name: fullName.trim() },
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(safeNext)}`,
         },
       });
       if (err) {
@@ -66,7 +76,7 @@ export function RegisterForm() {
         return;
       }
       if (data.session) {
-        router.push("/");
+        router.push(safeNext);
         router.refresh();
         return;
       }
@@ -201,7 +211,14 @@ export function RegisterForm() {
 
         <p className="auth-footer-text">
           Already have an account?{" "}
-          <Link href="/login" className="auth-link">
+          <Link
+            href={
+              safeNext !== "/home"
+                ? `/login?next=${encodeURIComponent(safeNext)}`
+                : "/login"
+            }
+            className="auth-link"
+          >
             Sign in
           </Link>
         </p>

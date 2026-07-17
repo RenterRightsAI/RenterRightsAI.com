@@ -10,6 +10,7 @@ const PUBLIC_PREFIXES = [
 ];
 
 function isPublicPath(pathname: string) {
+  if (pathname === "/") return true;
   return PUBLIC_PREFIXES.some(
     (p) => pathname === p || pathname.startsWith(p + "/")
   );
@@ -65,7 +66,8 @@ export async function updateSession(request: NextRequest) {
   if (user && isAuthEntryPath(pathname)) {
     const url = request.nextUrl.clone();
     const next = request.nextUrl.searchParams.get("next");
-    url.pathname = next && next.startsWith("/") ? next : "/";
+    url.pathname =
+      next && next.startsWith("/") && next !== "/" ? next : "/home";
     url.search = "";
     const redirect = NextResponse.redirect(url);
     supabaseResponse.cookies.getAll().forEach((cookie) => {

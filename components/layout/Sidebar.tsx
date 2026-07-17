@@ -7,7 +7,7 @@ import { useAuth } from "@/lib/context/AuthProvider";
 
 const NAV_ITEMS = [
   {
-    path: "/",
+    path: "/home",
     label: "Home",
     aria: "Home",
     icon: (

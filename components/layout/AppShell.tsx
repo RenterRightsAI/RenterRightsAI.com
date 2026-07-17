@@ -16,7 +16,8 @@ const AUTH_PREFIXES = [
   "/auth",
 ];
 
-function isAuthRoute(pathname: string) {
+function isShellLessRoute(pathname: string) {
+  if (pathname === "/") return true;
   return AUTH_PREFIXES.some(
     (p) => pathname === p || pathname.startsWith(p + "/")
   );
@@ -26,7 +27,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { mobileNavOpen, toggleMobileNav } = useApp();
 
-  if (isAuthRoute(pathname)) {
+  if (isShellLessRoute(pathname)) {
     return (
       <>
         {children}

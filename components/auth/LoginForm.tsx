@@ -11,9 +11,12 @@ export function LoginForm() {
   const searchParams = useSearchParams();
   const nextPath = searchParams.get("next");
   const safeNext =
-    nextPath && nextPath.startsWith("/") && !nextPath.startsWith("//")
+    nextPath &&
+    nextPath.startsWith("/") &&
+    !nextPath.startsWith("//") &&
+    nextPath !== "/"
       ? nextPath
-      : "/";
+      : "/home";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -149,7 +152,14 @@ export function LoginForm() {
 
         <p className="auth-footer-text">
           Don&apos;t have an account?{" "}
-          <Link href="/register" className="auth-link">
+          <Link
+            href={
+              safeNext !== "/home"
+                ? `/register?next=${encodeURIComponent(safeNext)}`
+                : "/register"
+            }
+            className="auth-link"
+          >
             Create one
           </Link>
         </p>
