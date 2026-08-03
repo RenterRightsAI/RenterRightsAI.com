@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useApp } from "@/lib/context/AppProvider";
 
 export function PaywallModal() {
@@ -10,6 +11,17 @@ export function PaywallModal() {
     closePaywall,
     activatePro,
   } = useApp();
+  const [busy, setBusy] = useState(false);
+
+  const startCheckout = async (interval: "month" | "year") => {
+    setBusy(true);
+    try {
+      await activatePro(interval);
+      closePaywall();
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div
@@ -83,7 +95,7 @@ export function PaywallModal() {
             <svg viewBox="0 0 24 24">
               <polyline points="20 6 9 17 4 12" />
             </svg>
-            Document vault — store photos, receipts, and evidence
+            Document vault for photos, receipts &amp; notices
           </div>
           <div className="paywall-perk">
             <svg viewBox="0 0 24 24">
@@ -101,18 +113,24 @@ export function PaywallModal() {
         <button
           className="paywall-btn paywall-btn-primary"
           type="button"
-          onClick={() => {
-            activatePro();
-            closePaywall();
-          }}
+          disabled={busy}
+          onClick={() => void startCheckout("month")}
         >
-          Upgrade to Pro — $8/month
+          {busy ? "Redirecting…" : "Upgrade to Pro — $8/month"}
+        </button>
+        <button
+          className="paywall-btn paywall-btn-sec"
+          type="button"
+          disabled={busy}
+          onClick={() => void startCheckout("year")}
+        >
+          Or save 18% — $79/year
         </button>
         <button className="paywall-btn paywall-btn-sec" type="button" onClick={closePaywall}>
           Maybe later
         </button>
         <div className="paywall-note">
-          Cancel anytime. Annual plan available at $79/year (save 18%).
+          Secure checkout with Stripe. Cancel anytime.
         </div>
       </div>
     </div>

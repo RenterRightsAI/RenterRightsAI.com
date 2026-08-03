@@ -11,6 +11,8 @@ import {
 import { usePathname, useRouter } from "next/navigation";
 import { PRO_SCREENS, FREE_AI_LIMIT, FREE_LETTER_LIMIT } from "@/lib/data/constants";
 import { STATE_LAWS } from "@/lib/data/state-laws";
+import { useAuth } from "@/lib/context/AuthProvider";
+import { createClient } from "@/lib/supabase/client";
 import type { IssueType, Plan, StateLaw } from "@/types";
 
 const PRO_ROUTES: Record<string, keyof typeof PRO_SCREENS> = {
@@ -30,6 +32,7 @@ const PRO_TITLES: Record<string, string> = {
 interface AppContextValue {
   plan: Plan;
   isPro: boolean;
+  planLoading: boolean;
   selectedState: string;
   setSelectedState: (state: string) => void;
   getStateLaw: () => StateLaw | null;
@@ -52,7 +55,9 @@ interface AppContextValue {
   paywallSub: string;
   openPaywall: (title?: string, sub?: string) => void;
   closePaywall: () => void;
-  activatePro: () => void;
+  activatePro: (interval?: "month" | "year") => Promise<void>;
+  openBillingPortal: () => Promise<void>;
+  refreshPlan: () => Promise<void>;
   activateOrg: () => void;
   selectFreePlan: () => void;
   tryUseAi: () => boolean;
@@ -63,11 +68,18 @@ interface AppContextValue {
 
 const AppContext = createContext<AppContextValue | null>(null);
 
+function normalizePlan(value: unknown): Plan {
+  if (value === "pro" || value === "org" || value === "free") return value;
+  return "free";
+}
+
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const { user } = useAuth();
 
   const [plan, setPlan] = useState<Plan>("free");
+  const [planLoading, setPlanLoading] = useState(false);
   const [selectedState, setSelectedState] = useState("");
   const [aiQuestionsUsed, setAiQuestionsUsed] = useState(0);
   const [lettersUsed, setLettersUsed] = useState(0);
@@ -100,6 +112,53 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     window.setTimeout(() => setToastVisible(false), 2800);
   }, []);
 
+  const refreshPlan = useCallback(async () => {
+    if (!user) {
+      setPlan("free");
+      setPlanLoading(false);
+      return;
+    }
+    if (
+      !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+      !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    ) {
+      return;
+    }
+
+    setPlanLoading(true);
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("plan")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (error) {
+        console.warn("[plan] load failed", error.message);
+        return;
+      }
+
+      if (!data) {
+        await supabase.from("profiles").upsert({
+          id: user.id,
+          email: user.email ?? null,
+          plan: "free",
+        });
+        setPlan("free");
+        return;
+      }
+
+      setPlan(normalizePlan(data.plan));
+    } finally {
+      setPlanLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    void refreshPlan();
+  }, [refreshPlan]);
+
   const openPaywall = useCallback((title?: string, sub?: string) => {
     if (title) setPaywallTitle(title);
     if (sub) setPaywallSub(sub);
@@ -131,10 +190,48 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [isPro, openPaywall, router, toggleMobileNav]
   );
 
-  const activatePro = useCallback(() => {
-    setPlan("pro");
-    showToast("Welcome to Renter Pro! All features unlocked.");
-  }, [showToast]);
+  const activatePro = useCallback(
+    async (interval: "month" | "year" = "month") => {
+      if (!user) {
+        router.push("/login?next=/pricing");
+        return;
+      }
+      try {
+        const res = await fetch("/api/stripe/checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ interval }),
+        });
+        const data = (await res.json()) as { url?: string; error?: string };
+        if (!res.ok || !data.url) {
+          showToast(data.error || "Could not start checkout.");
+          return;
+        }
+        window.location.href = data.url;
+      } catch {
+        showToast("Could not start checkout. Try again.");
+      }
+    },
+    [router, showToast, user]
+  );
+
+  const openBillingPortal = useCallback(async () => {
+    if (!user) {
+      router.push("/login?next=/pricing");
+      return;
+    }
+    try {
+      const res = await fetch("/api/stripe/portal", { method: "POST" });
+      const data = (await res.json()) as { url?: string; error?: string };
+      if (!res.ok || !data.url) {
+        showToast(data.error || "Could not open billing portal.");
+        return;
+      }
+      window.location.href = data.url;
+    } catch {
+      showToast("Could not open billing portal.");
+    }
+  }, [router, showToast, user]);
 
   const activateOrg = useCallback(() => {
     showToast(
@@ -143,16 +240,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [showToast]);
 
   const selectFreePlan = useCallback(() => {
-    setPlan((p) => {
-      if (p !== "free") {
-        setAiQuestionsUsed(0);
-        setLettersUsed(0);
-        showToast("Downgraded to Free plan.");
-        return "free";
-      }
-      return p;
-    });
-  }, [showToast]);
+    if (plan === "pro") {
+      void openBillingPortal();
+      return;
+    }
+    if (plan !== "free") {
+      setAiQuestionsUsed(0);
+      setLettersUsed(0);
+      showToast("Downgraded to Free plan.");
+      setPlan("free");
+    }
+  }, [openBillingPortal, plan, showToast]);
 
   const tryUseAi = useCallback(() => {
     if (!isPro && aiQuestionsUsed >= FREE_AI_LIMIT) {
@@ -210,6 +308,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     () => ({
       plan,
       isPro,
+      planLoading,
       selectedState,
       setSelectedState,
       getStateLaw,
@@ -233,6 +332,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       openPaywall,
       closePaywall,
       activatePro,
+      openBillingPortal,
+      refreshPlan,
       activateOrg,
       selectFreePlan,
       tryUseAi,
@@ -243,6 +344,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [
       plan,
       isPro,
+      planLoading,
       selectedState,
       getStateLaw,
       aiQuestionsUsed,
@@ -262,6 +364,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       openPaywall,
       closePaywall,
       activatePro,
+      openBillingPortal,
+      refreshPlan,
       activateOrg,
       selectFreePlan,
       tryUseAi,

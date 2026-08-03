@@ -1,9 +1,13 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { FREE_AI_LIMIT, FREE_LETTER_LIMIT } from "@/lib/data/constants";
 import { useApp } from "@/lib/context/AppProvider";
 
 export function PricingView() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const {
     plan,
     aiQuestionsUsed,
@@ -12,7 +16,47 @@ export function PricingView() {
     selectFreePlan,
     activatePro,
     activateOrg,
+    openBillingPortal,
+    refreshPlan,
+    showToast,
   } = useApp();
+  const [busy, setBusy] = useState<"month" | "year" | "portal" | null>(null);
+
+  useEffect(() => {
+    const checkout = searchParams.get("checkout");
+    if (!checkout) return;
+
+    if (checkout === "success") {
+      void (async () => {
+        // Webhook may land slightly after redirect
+        await new Promise((r) => setTimeout(r, 800));
+        await refreshPlan();
+        showToast("Welcome to Renter Pro! All features unlocked.");
+        router.replace("/pricing");
+      })();
+    } else if (checkout === "canceled") {
+      showToast("Checkout canceled — no charge was made.");
+      router.replace("/pricing");
+    }
+  }, [refreshPlan, router, searchParams, showToast]);
+
+  const startCheckout = async (interval: "month" | "year") => {
+    setBusy(interval);
+    try {
+      await activatePro(interval);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const manageBilling = async () => {
+    setBusy("portal");
+    try {
+      await openBillingPortal();
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const aiPct = Math.min(Math.round((aiQuestionsUsed / FREE_AI_LIMIT) * 100), 100);
   const lPct = Math.min(Math.round((lettersUsed / FREE_LETTER_LIMIT) * 100), 100);
@@ -120,10 +164,14 @@ export function PricingView() {
             id="cta-free"
             type="button"
             onClick={selectFreePlan}
-            disabled={plan === "free"}
+            disabled={plan === "free" || busy !== null}
             style={plan !== "free" ? { opacity: 0.6 } : undefined}
           >
-            {plan === "free" ? "Current plan" : "Downgrade to Free"}
+            {plan === "free"
+              ? "Current plan"
+              : plan === "pro"
+                ? "Manage / cancel in Stripe"
+                : "Downgrade to Free"}
           </button>
         </div>
 
@@ -165,16 +213,38 @@ export function PricingView() {
               <span className="feat-icon yes">✓</span>Priority support
             </div>
           </div>
-          <button
-            className="pricing-cta primary"
-            id="cta-pro"
-            type="button"
-            onClick={activatePro}
-            disabled={plan === "pro"}
-            style={plan === "pro" ? { opacity: 0.7 } : undefined}
-          >
-            {plan === "pro" ? "Current plan ✓" : "Upgrade to Pro"}
-          </button>
+          {plan === "pro" ? (
+            <button
+              className="pricing-cta primary"
+              id="cta-pro"
+              type="button"
+              onClick={() => void manageBilling()}
+              disabled={busy !== null}
+              style={{ opacity: 0.95 }}
+            >
+              {busy === "portal" ? "Opening…" : "Manage billing ✓"}
+            </button>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
+              <button
+                className="pricing-cta primary"
+                id="cta-pro"
+                type="button"
+                onClick={() => void startCheckout("month")}
+                disabled={busy !== null}
+              >
+                {busy === "month" ? "Redirecting…" : "Upgrade — $8/mo"}
+              </button>
+              <button
+                className="pricing-cta"
+                type="button"
+                onClick={() => void startCheckout("year")}
+                disabled={busy !== null}
+              >
+                {busy === "year" ? "Redirecting…" : "Upgrade — $79/yr (save 18%)"}
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="pricing-card" id="pc-org">
