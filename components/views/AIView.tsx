@@ -68,6 +68,21 @@ function inferLetterType(question: string, answer: string): LetterType | null {
   return null;
 }
 
+function buildSituationFromChat(messages: DisplayMessage[]): string {
+  if (!messages.length) return "";
+  const body = messages
+    .map((m) => {
+      const who = m.role === "user" ? "Me" : "Advisor";
+      return `${who}: ${m.content.trim()}`;
+    })
+    .join("\n\n");
+  const summary = `Based on my conversation with the Renter Rights AI advisor:\n\n${body}`;
+  // Keep form usable if the thread is very long
+  const max = 4500;
+  if (summary.length <= max) return summary;
+  return summary.slice(0, max - 1) + "…";
+}
+
 export function AIView() {
   const {
     getStateLaw,
@@ -76,6 +91,7 @@ export function AIView() {
     tryUseAi,
     incrementAiUsage,
     setLetterTypePrefill,
+    setLetterDetailsPrefill,
     navigate,
   } = useApp();
 
@@ -88,6 +104,13 @@ export function AIView() {
     ? `Hi! I'm your renter rights advisor. I can see you're in ${law.name} — I'll tailor my answers to your state's specific laws, including the ${law.depositDays} deposit return rule, ${law.noticeDays} entry notice requirement, and ${law.rentControl ? "rent control protections" : "the absence of statewide rent control"}. What do you need help with?`
     : "Hi! I'm your renter rights advisor. Ask me anything — about repairs, deposits, evictions, lease terms, or what your landlord is or isn't allowed to do. If you've selected your state above, I'll tailor my answers to your local laws.";
 
+  const lastAssistantIndex = (() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "assistant") return i;
+    }
+    return -1;
+  })();
+
   useEffect(() => {
     if (aiPrefill) {
       setInput(aiPrefill);
@@ -97,6 +120,7 @@ export function AIView() {
 
   const goToLetter = (type: LetterType) => {
     setLetterTypePrefill(type);
+    setLetterDetailsPrefill(buildSituationFromChat(messages));
     navigate("/letter");
   };
 
@@ -197,7 +221,10 @@ export function AIView() {
               <div className="msg-avatar">{m.role === "user" ? "You" : "AI"}</div>
               <div className="msg-bubble">
                 <div style={{ whiteSpace: "pre-wrap" }}>{m.content}</div>
-                {m.role === "assistant" && m.letterType ? (
+                {m.role === "assistant" &&
+                m.letterType &&
+                i === lastAssistantIndex &&
+                !loading ? (
                   <button
                     type="button"
                     className="btn btn-primary"

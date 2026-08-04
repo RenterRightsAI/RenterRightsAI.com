@@ -11,6 +11,8 @@ export function LetterView() {
     getStateLaw,
     letterTypePrefill,
     setLetterTypePrefill,
+    letterDetailsPrefill,
+    setLetterDetailsPrefill,
     tryUseLetter,
     incrementLetterUsage,
     showToast,
@@ -43,6 +45,13 @@ export function LetterView() {
       setLetterTypePrefill(null);
     }
   }, [letterTypePrefill, setLetterTypePrefill]);
+
+  useEffect(() => {
+    if (letterDetailsPrefill) {
+      setDetails(letterDetailsPrefill);
+      setLetterDetailsPrefill(null);
+    }
+  }, [letterDetailsPrefill, setLetterDetailsPrefill]);
 
   const generateLetter = () => {
     if (!tryUseLetter()) return;

@@ -44,6 +44,8 @@ interface AppContextValue {
   setAiPrefill: (text: string) => void;
   letterTypePrefill: string | null;
   setLetterTypePrefill: (type: string | null) => void;
+  letterDetailsPrefill: string | null;
+  setLetterDetailsPrefill: (details: string | null) => void;
   mobileNavOpen: boolean;
   toggleMobileNav: (force?: boolean) => void;
   navigate: (path: string) => void;
@@ -88,6 +90,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [letterTypePrefill, setLetterTypePrefill] = useState<string | null>(
     null
   );
+  const [letterDetailsPrefill, setLetterDetailsPrefill] = useState<
+    string | null
+  >(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const [toastVisible, setToastVisible] = useState(false);
@@ -320,6 +325,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setAiPrefill,
       letterTypePrefill,
       setLetterTypePrefill,
+      letterDetailsPrefill,
+      setLetterDetailsPrefill,
       mobileNavOpen,
       toggleMobileNav,
       navigate,
@@ -352,6 +359,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       currentIssue,
       aiPrefill,
       letterTypePrefill,
+      letterDetailsPrefill,
       mobileNavOpen,
       toggleMobileNav,
       navigate,
