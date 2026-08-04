@@ -2,7 +2,71 @@
 
 import { useEffect, useState } from "react";
 import { useApp } from "@/lib/context/AppProvider";
-import type { ChatMessage } from "@/types";
+import type { ChatMessage, LetterType } from "@/types";
+
+const LETTER_TYPES: LetterType[] = [
+  "deposit",
+  "repairs",
+  "habitability",
+  "privacy",
+  "retaliation",
+];
+
+const LETTER_LABELS: Record<LetterType, string> = {
+  deposit: "Draft a deposit demand letter",
+  repairs: "Draft a repair request letter",
+  habitability: "Draft a habitability letter",
+  privacy: "Draft a privacy / entry letter",
+  retaliation: "Draft a formal notice letter",
+};
+
+type DisplayMessage = ChatMessage & { letterType?: LetterType | null };
+
+function parseAssistantReply(raw: string): {
+  content: string;
+  letterType: LetterType | null;
+} {
+  const tagRe = /\[\[LETTER:(deposit|repairs|habitability|privacy|retaliation|none)\]\]/i;
+  const match = raw.match(tagRe);
+  let letterType: LetterType | null = null;
+  if (match) {
+    const key = match[1].toLowerCase();
+    if (key !== "none" && LETTER_TYPES.includes(key as LetterType)) {
+      letterType = key as LetterType;
+    }
+  }
+  const content = raw
+    .replace(tagRe, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return { content, letterType };
+}
+
+/** Fallback if the model forgets the tag but the user clearly needs a letter. */
+function inferLetterType(question: string, answer: string): LetterType | null {
+  const text = `${question} ${answer}`.toLowerCase();
+  if (
+    /deposit|security deposit|withh[eo]ld/.test(text)
+  ) {
+    return "deposit";
+  }
+  if (/mold|pest|heat|no heat|uninhabitable|habitability|sewage|leak/.test(text)) {
+    return "habitability";
+  }
+  if (/enter without|entered without|notice to enter|privacy|lockout/.test(text)) {
+    return "privacy";
+  }
+  if (/retaliat|evict/.test(text) && /threat|notice|revenge|complain/.test(text)) {
+    return "retaliation";
+  }
+  if (/repair|broken|fix|maintenance|won't fix|will not fix/.test(text)) {
+    return "repairs";
+  }
+  if (/demand letter|written (demand|notice)|send a letter/.test(text)) {
+    return "repairs";
+  }
+  return null;
+}
 
 export function AIView() {
   const {
@@ -11,10 +75,11 @@ export function AIView() {
     setAiPrefill,
     tryUseAi,
     incrementAiUsage,
-    showToast,
+    setLetterTypePrefill,
+    navigate,
   } = useApp();
 
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -30,6 +95,11 @@ export function AIView() {
     }
   }, [aiPrefill, setAiPrefill]);
 
+  const goToLetter = (type: LetterType) => {
+    setLetterTypePrefill(type);
+    navigate("/letter");
+  };
+
   const sendAI = async (question?: string) => {
     const q = (question ?? input).trim();
     if (!q) return;
@@ -37,26 +107,43 @@ export function AIView() {
 
     setInput("");
     incrementAiUsage();
-    const userMsg: ChatMessage = { role: "user", content: q };
+    const userMsg: DisplayMessage = { role: "user", content: q };
     const nextHistory = [...messages, userMsg];
     setMessages(nextHistory);
     setLoading(true);
 
     try {
+      const apiMessages = nextHistory.map(({ role, content }) => ({
+        role,
+        content,
+      }));
       const resp = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: nextHistory,
+          messages: apiMessages,
           stateContext: law,
         }),
       });
       const data = await resp.json();
-      const answer =
+      const raw =
         data.content?.[0]?.text ||
         data.error ||
         "Sorry, I had trouble responding. Please try again.";
-      setMessages((prev) => [...prev, { role: "assistant", content: answer }]);
+
+      const parsed = parseAssistantReply(raw);
+      const letterType =
+        parsed.letterType ??
+        (data.error ? null : inferLetterType(q, parsed.content));
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: parsed.content,
+          letterType,
+        },
+      ]);
     } catch {
       setMessages((prev) => [
         ...prev,
@@ -108,7 +195,19 @@ export function AIView() {
           {messages.map((m, i) => (
             <div className={`msg msg-${m.role === "user" ? "user" : "ai"}`} key={i}>
               <div className="msg-avatar">{m.role === "user" ? "You" : "AI"}</div>
-              <div className="msg-bubble">{m.content}</div>
+              <div className="msg-bubble">
+                <div style={{ whiteSpace: "pre-wrap" }}>{m.content}</div>
+                {m.role === "assistant" && m.letterType ? (
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    style={{ marginTop: 12 }}
+                    onClick={() => goToLetter(m.letterType!)}
+                  >
+                    {LETTER_LABELS[m.letterType]} →
+                  </button>
+                ) : null}
+              </div>
             </div>
           ))}
           {loading ? (
