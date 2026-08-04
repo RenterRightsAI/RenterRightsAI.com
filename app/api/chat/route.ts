@@ -21,6 +21,31 @@ CRITICAL: On the final line of your reply, output exactly one machine tag (nothi
 Use only those five letter types or none. Do not wrap the tag in backticks.`;
 }
 
+function buildSituationSummaryPrompt(law: StateLaw | null): string {
+  const stateHint = law ? ` The tenant is in ${law.name}.` : "";
+  return `You rewrite chat history into a short situation summary for a landlord demand-letter form.
+
+Write 2–5 sentences in first person ("I…") describing only the tenant's factual situation and what they want (e.g. return of deposit, repairs completed).${stateHint}
+
+Rules:
+- Use only facts the tenant stated or clearly confirmed in the chat.
+- Include concrete details when present: amounts, dates/timeline, what the landlord did or failed to do, notices already sent.
+- Do NOT include legal advice, statute citations, next steps, or anything about AI/tools/letter generators.
+- Do NOT invent facts. If a detail was not in the chat, omit it.
+- Plain paragraph only — no bullets, no headings, no machine tags.`;
+}
+
+function formatChatForSummary(
+  messages: { role: string; content: string }[]
+): string {
+  return messages
+    .map((m) => {
+      const who = m.role === "user" ? "Tenant" : "Advisor";
+      return `${who}: ${m.content.trim()}`;
+    })
+    .join("\n\n");
+}
+
 export async function POST(req: Request) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -31,8 +56,26 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { messages, stateContext } = await req.json();
-    const system = buildSystemPrompt(stateContext ?? null);
+    const body = await req.json();
+    const { messages, stateContext, mode } = body as {
+      messages: { role: string; content: string }[];
+      stateContext?: StateLaw | null;
+      mode?: string;
+    };
+
+    const isSituation = mode === "letter-situation";
+    const system = isSituation
+      ? buildSituationSummaryPrompt(stateContext ?? null)
+      : buildSystemPrompt(stateContext ?? null);
+
+    const anthropicMessages = isSituation
+      ? [
+          {
+            role: "user",
+            content: `Summarize this chat into the letter situation field:\n\n${formatChatForSummary(messages ?? [])}`,
+          },
+        ]
+      : messages;
 
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -43,9 +86,9 @@ export async function POST(req: Request) {
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
-        max_tokens: 1000,
+        max_tokens: isSituation ? 400 : 1000,
         system,
-        messages,
+        messages: anthropicMessages,
       }),
     });
 

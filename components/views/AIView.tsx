@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useApp } from "@/lib/context/AppProvider";
-import type { ChatMessage, LetterType } from "@/types";
+import type { ChatMessage, LetterType, StateLaw } from "@/types";
 
 const LETTER_TYPES: LetterType[] = [
   "deposit",
@@ -68,19 +68,41 @@ function inferLetterType(question: string, answer: string): LetterType | null {
   return null;
 }
 
-function buildSituationFromChat(messages: DisplayMessage[]): string {
-  if (!messages.length) return "";
-  const body = messages
-    .map((m) => {
-      const who = m.role === "user" ? "Me" : "Advisor";
-      return `${who}: ${m.content.trim()}`;
-    })
-    .join("\n\n");
-  const summary = `Based on my conversation with the Renter Rights AI advisor:\n\n${body}`;
-  // Keep form usable if the thread is very long
-  const max = 4500;
-  if (summary.length <= max) return summary;
-  return summary.slice(0, max - 1) + "…";
+/** Fallback if the summary API fails: tenant facts only, no advisor essay. */
+function buildSituationFallback(messages: DisplayMessage[]): string {
+  const userBits = messages
+    .filter((m) => m.role === "user")
+    .map((m) => m.content.trim())
+    .filter(Boolean);
+  if (!userBits.length) return "";
+  const joined = userBits.join(" ");
+  const max = 2000;
+  return joined.length <= max ? joined : joined.slice(0, max - 1) + "…";
+}
+
+async function summarizeSituationForLetter(
+  messages: DisplayMessage[],
+  stateContext: StateLaw | null
+): Promise<string> {
+  const payload = messages.map(({ role, content }) => ({ role, content }));
+  try {
+    const resp = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mode: "letter-situation",
+        messages: payload,
+        stateContext,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || "Summary failed");
+    const text = (data.content?.[0]?.text as string | undefined)?.trim();
+    if (text) return text;
+  } catch {
+    /* use fallback */
+  }
+  return buildSituationFallback(messages);
 }
 
 export function AIView() {
@@ -98,6 +120,7 @@ export function AIView() {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [handingOff, setHandingOff] = useState(false);
 
   const law = getStateLaw();
   const welcome = law
@@ -118,10 +141,17 @@ export function AIView() {
     }
   }, [aiPrefill, setAiPrefill]);
 
-  const goToLetter = (type: LetterType) => {
+  const goToLetter = async (type: LetterType) => {
+    if (handingOff) return;
+    setHandingOff(true);
     setLetterTypePrefill(type);
-    setLetterDetailsPrefill(buildSituationFromChat(messages));
-    navigate("/letter");
+    try {
+      const situation = await summarizeSituationForLetter(messages, law);
+      setLetterDetailsPrefill(situation);
+      navigate("/letter");
+    } finally {
+      setHandingOff(false);
+    }
   };
 
   const sendAI = async (question?: string) => {
@@ -229,9 +259,12 @@ export function AIView() {
                     type="button"
                     className="btn btn-primary"
                     style={{ marginTop: 12 }}
-                    onClick={() => goToLetter(m.letterType!)}
+                    disabled={handingOff}
+                    onClick={() => void goToLetter(m.letterType!)}
                   >
-                    {LETTER_LABELS[m.letterType]} →
+                    {handingOff
+                      ? "Preparing your situation…"
+                      : `${LETTER_LABELS[m.letterType]} →`}
                   </button>
                 ) : null}
               </div>
